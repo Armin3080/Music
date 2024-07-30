@@ -4,53 +4,67 @@ const startButton = document.getElementById('startButton');
 
 let localStream;
 let peerConnection;
-let socket;
-const serverUrl = 'ws://82.115.21.174:8080';  // آدرس سرور WebSocket خود را وارد کنید
+const websocket = new WebSocket('ws://82.115.21.174:8080');  // آدرس IP سرور خود را جایگزین کنید
 
-const servers = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' } // استفاده از STUN سرور گوگل
-  ]
+const config = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' }
+    ]
+};
+
+websocket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    switch(data.type) {
+        case 'offer':
+            handleOffer(data.offer);
+            break;
+        case 'answer':
+            handleAnswer(data.answer);
+            break;
+        case 'candidate':
+            handleCandidate(data.candidate);
+            break;
+    }
 };
 
 startButton.onclick = async () => {
-  socket = new WebSocket(serverUrl);
-
-  socket.onopen = async () => {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
-
-    peerConnection = new RTCPeerConnection(servers);
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
-      }
-    };
-    peerConnection.ontrack = (event) => {
-      remoteVideo.srcObject = event.streams[0];
-    };
-
-    localStream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, localStream);
-    });
-
+    peerConnection = createPeerConnection();
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
-    socket.send(JSON.stringify({ type: 'offer', offer }));
-  };
-
-  socket.onmessage = async (message) => {
-    const data = JSON.parse(message.data);
-
-    if (data.type === 'offer') {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      socket.send(JSON.stringify({ type: 'answer', answer }));
-    } else if (data.type === 'answer') {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-    } else if (data.type === 'candidate') {
-      await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-    }
-  };
+    websocket.send(JSON.stringify({ type: 'offer', offer: offer }));
 };
+
+function createPeerConnection() {
+    const pc = new RTCPeerConnection(config);
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            websocket.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
+        }
+    };
+    pc.ontrack = (event) => {
+        remoteVideo.srcObject = event.streams[0];
+    };
+    return pc;
+}
+
+async function handleOffer(offer) {
+    if (!peerConnection) {
+        peerConnection = createPeerConnection();
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    }
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    websocket.send(JSON.stringify({ type: 'answer', answer: answer }));
+}
+
+async function handleAnswer(answer) {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+}
+
+function handleCandidate(candidate) {
+    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+}
