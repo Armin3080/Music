@@ -5,7 +5,7 @@ const startButton = document.getElementById('startButton');
 let localStream;
 let peerConnection;
 let socket;
-const serverUrl = 'ws://localhost:8080';  // آدرس سرور WebSocket خود را وارد کنید
+const serverUrl = 'ws://82.115.21.174:8080';  // آدرس سرور WebSocket خود را وارد کنید
 
 const servers = {
   iceServers: [
