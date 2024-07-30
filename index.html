@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Random Video Chat</title>
+    <style>
+         body {
+            font-family: 'Roboto', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: url('https://media0.giphy.com/media/xUPGcLHvxszprQfLtm/giphy.gif?cid=ecf05e47j3yvtaf5tju3ql22u3z6tis2r12whfximgy5rgcw&ep=v1_gifs_related&rid=giphy.gif&ct=g') no-repeat center center fixed;
+            background-size: cover;
+            background-position: center;
+            color: #fff;
+        }
+        #video-container {
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+        video {
+            width: 400px;
+            height: 300px;
+            margin: 10px;
+            border-radius: 10px;
+            border: 2px solid #00ffcc;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 18px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #00ffcc;
+            color: #000;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #00cc99;
+        }
+    </style>
+</head>
+<body>
+    <div id="video-container">
+        <video id="localVideo" autoplay muted></video>
+        <video id="remoteVideo" autoplay></video>
+        <button id="startButton">Start Call</button>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
