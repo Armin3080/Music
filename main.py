@@ -79,7 +79,7 @@ async def send_video_from_url(chat_id, video_url, context):
                     f.write(chunk)
 
             with open(file_name, 'rb') as video_file:
-                await context.bot.send_video(chat_id=chat_id, video=video_file, timeout=180)
+                await context.bot.send_video(chat_id=chat_id, video=video_file)  # بدون timeout
 
             await context.bot.send_message(chat_id=chat_id, text='✅ ویدیو با موفقیت ارسال شد.')
         else:
