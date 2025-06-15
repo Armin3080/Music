@@ -1,33 +1,11 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes,
-    CallbackQueryHandler, MessageHandler, filters
-)
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 import yt_dlp
 import os
-import requests
 
 BOT_TOKEN = '6654800068:AAGNhkRs39HWR6D3B3Iu8yOzJCgbuH7S7sk'
 
 user_video_formats = {}
-
-def upload_file_anonymfile(file_path):
-    url = "https://api.anonymfile.com/upload"
-    try:
-        with open(file_path, 'rb') as f:
-            files = {'file': f}
-            response = requests.post(url, files=files)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('status'):
-                return data['data']['file']['url']['full']
-            else:
-                print(f"آپلود موفق نبود: {data}")
-        else:
-            print(f"خطا در آپلود، کد وضعیت: {response.status_code}")
-    except Exception as e:
-        print(f"خطا در آپلود فایل: {e}")
-    return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("سلام! لینک ویدیوی Pornhub رو بفرست 🎥")
@@ -65,8 +43,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         keyboard = []
         for f in video_formats:
-            size = round(f['filesize'] / 1024 / 1024, 2) if f.get('filesize') else '??'
-            label = f"{f['height']}p - {size} MB"
+            size_mb = round(f['filesize'] / 1024 / 1024, 2) if f.get('filesize') else '??'
+            label = f"{f['height']}p - {size_mb} MB"
             keyboard.append([InlineKeyboardButton(label, callback_data=str(f['format_id']))])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -111,14 +89,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        await query.message.reply_text("⏳ در حال آپلود ویدیو...")
+        await query.message.reply_text("📤 در حال ارسال ویدیو...")
 
-        link = upload_file_anonymfile(file_name)
-
-        if link:
-            await query.message.reply_text(f"✅ دانلود و آپلود کامل شد!\nلینک دانلود:\n{link}")
-        else:
-            await query.message.reply_text("❌ خطا در آپلود فایل.")
+        with open(file_name, 'rb') as video_file:
+            await query.message.reply_document(chat_id=chat_id, document=video_file, caption="✅ دانلود کامل شد!")
 
         os.remove(file_name)
 
