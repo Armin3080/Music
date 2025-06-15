@@ -7,7 +7,7 @@ import yt_dlp
 import os
 import requests
 
-BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE'
+BOT_TOKEN = '6654800068:AAGNhkRs39HWR6D3B3Iu8yOzJCgbuH7S7sk'
 
 user_video_formats = {}
 
@@ -137,3 +137,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
