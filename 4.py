@@ -1,134 +1,127 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes,
-    CallbackQueryHandler, MessageHandler, filters
-)
-import yt_dlp
 import os
+import asyncio
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from yt_dlp import YoutubeDL
 
-# توکن ربات
-BOT_TOKEN = '6654800068:AAGNhkRs39HWR6D3B3Iu8yOzJCgbuH7S7sk'
+TOKEN = "6654800068:AAGNhkRs39HWR6D3B3Iu8yOzJCgbuH7S7sk"
 
-# آیدی کانال خصوصی که ربات توش ادمینه
-PRIVATE_CHANNEL_ID = 2721122517
-
-# ذخیره کیفیت‌های ویدیو و لینک‌ها برای هر کاربر
-user_video_formats = {}
+ydl_opts = {
+    'format': 'bestvideo+bestaudio/best',
+    'outtmpl': 'downloads/%(title)s.%(ext)s',
+    'noplaylist': True,
+    'quiet': True,
+    'no_warnings': True,
+    'ignoreerrors': True,
+}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام! لینک ویدیوی Pornhub رو بفرست 🎥")
+    await update.message.reply_text(
+        "سلام! لینک ویدیو از xnxx یا سایت‌های مشابه رو بفرست، من کیفیت‌ها رو برات می‌فرستم."
+    )
 
-# دریافت لینک و ارسال کیفیت‌ها
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text
-    chat_id = update.message.chat_id
+async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text.strip()
+    chat_id = update.message.chat.id
 
-    if "pornhub.com" not in url:
-        await update.message.reply_text("فقط لینک‌های pornhub.com پشتیبانی می‌شن ❗")
-        return
+    await update.message.reply_text("⏳ در حال استخراج کیفیت‌ها...")
 
-    await update.message.reply_text("⏳ در حال پردازش ویدیو...")
-
+    # استخراج اطلاعات ویدیو با yt-dlp
     try:
-        ydl_opts = {
-            'quiet': True,
-            'skip_download': True,
-        }
+        loop = asyncio.get_event_loop()
+        info = await loop.run_in_executor(None, lambda: YoutubeDL({'quiet': True}).extract_info(url, download=False))
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-
-        formats = info.get('formats', [])
-        video_formats = [f for f in formats if f.get('ext') == 'mp4' and f.get('height')]
-
-        if not video_formats:
-            await update.message.reply_text("❌ هیچ کیفیتی پیدا نشد.")
+        if 'formats' not in info:
+            await update.message.reply_text("❌ ویدیو پیدا نشد یا لینک معتبر نیست.")
             return
 
-        user_video_formats[chat_id] = {
-            "formats": video_formats,
-            "url": url
-        }
+        formats = info['formats']
+
+        # فیلتر فقط فرمت های mp4 و ویدیو
+        video_formats = [f for f in formats if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4']
+
+        if not video_formats:
+            await update.message.reply_text("❌ فرمت ویدیویی mp4 قابل دانلود پیدا نشد.")
+            return
+
+        # مرتب سازی بر اساس کیفیت (height)
+        video_formats = sorted(video_formats, key=lambda x: x.get('height') or 0, reverse=True)
+
+        # ذخیره اطلاعات فرمت‌ها برای دکمه‌ها
+        context.user_data['video_formats'] = video_formats
 
         keyboard = []
-        for f in video_formats:
-            size = round(f['filesize'] / 1024 / 1024, 2) if f.get('filesize') else '??'
-            label = f"{f['height']}p - {size} MB"
-            keyboard.append([InlineKeyboardButton(label, callback_data=str(f['format_id']))])
+        for i, f in enumerate(video_formats[:10]):  # حداکثر 10 کیفیت نمایش میده
+            label = f"{f.get('height')}p | {f.get('format_note') or ''} | {f.get('filesize') or 0 // 1024}KB"
+            keyboard.append([InlineKeyboardButton(label, callback_data=str(i))])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("✅ کیفیت مورد نظر رو انتخاب کن:", reply_markup=reply_markup)
+        await update.message.reply_text("کیفیت مورد نظر را انتخاب کن:", reply_markup=reply_markup)
 
     except Exception as e:
-        await update.message.reply_text(f"❌ خطا: {e}")
+        await update.message.reply_text(f"❌ خطا در پردازش لینک:\n{e}")
 
-# دانلود، ارسال به کانال و فوروارد به کاربر
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    format_id = query.data
-    chat_id = query.message.chat_id
+    selected_index = int(query.data)
+    video_formats = context.user_data.get('video_formats', [])
 
-    user_data = user_video_formats.get(chat_id)
-
-    if not user_data:
-        await query.message.reply_text("❌ اطلاعاتی از لینک قبلی یافت نشد. دوباره لینک رو بفرست.")
+    if not video_formats or selected_index >= len(video_formats):
+        await query.edit_message_text("❌ کیفیت انتخاب شده معتبر نیست.")
         return
 
-    formats = user_data["formats"]
-    url = user_data["url"]
+    format_info = video_formats[selected_index]
+    url = format_info.get('url')
+    title = format_info.get('format') or "video"
+    chat_id = query.message.chat.id
 
-    selected_format = next((f for f in formats if str(f['format_id']) == format_id), None)
+    await query.edit_message_text(f"⏳ در حال دانلود و ارسال ویدیو با کیفیت {format_info.get('height')}p...")
 
-    if not selected_format:
-        await query.message.reply_text("❌ کیفیت انتخابی معتبر نیست.")
-        return
+    # ساخت پوشه دانلود اگر وجود ندارد
+    if not os.path.exists("downloads"):
+        os.makedirs("downloads")
 
-    file_name = f"video_{chat_id}.mp4"
+    file_path = os.path.join("downloads", f"{title}.mp4".replace(" ", "_"))
 
-    await query.message.reply_text("📥 در حال دانلود و ارسال... لطفاً منتظر بمان")
+    # دانلود ویدیو با yt-dlp در پس زمینه
+    ydl_opts_local = {
+        'format': format_info.get('format_id'),
+        'outtmpl': file_path,
+        'quiet': True,
+        'no_warnings': True,
+        'ignoreerrors': True,
+    }
 
+    def download_video():
+        with YoutubeDL(ydl_opts_local) as ydl:
+            ydl.download([format_info['url']])
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, download_video)
+
+    # ارسال ویدیو
     try:
-        ydl_opts = {
-            'quiet': True,
-            'outtmpl': file_name,
-            'format': format_id,
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-
-        # ارسال به کانال خصوصی
-        with open(file_name, 'rb') as f:
-            channel_msg = await context.bot.send_video(
-                chat_id=PRIVATE_CHANNEL_ID,
-                video=f,
-                caption=f"🎬 ویدیو برای کاربر {chat_id}",
-                supports_streaming=True
-            )
-
-        # فوروارد به کاربر
-        await context.bot.forward_message(
-            chat_id=chat_id,
-            from_chat_id=PRIVATE_CHANNEL_ID,
-            message_id=channel_msg.message_id
-        )
-
-        os.remove(file_name)
-
+        with open(file_path, 'rb') as video_file:
+            await context.bot.send_video(chat_id=chat_id, video=video_file)
+        await context.bot.send_message(chat_id=chat_id, text="✅ ویدیو با موفقیت ارسال شد.")
     except Exception as e:
-        await query.message.reply_text(f"❌ خطا در دانلود یا ارسال: {e}")
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ خطا در ارسال ویدیو:\n{e}")
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ ربات در حال اجراست...")
+    print("ربات اجرا شد...")
     app.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
+
