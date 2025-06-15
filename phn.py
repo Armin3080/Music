@@ -1,7 +1,11 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, ContextTypes,
+    MessageHandler, CallbackQueryHandler, filters
+)
 import yt_dlp
 import os
+import requests
 
 BOT_TOKEN = '6654800068:AAGNhkRs39HWR6D3B3Iu8yOzJCgbuH7S7sk'
 
@@ -89,10 +93,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        await query.message.reply_text("📤 در حال ارسال ویدیو...")
+        file_size = os.path.getsize(file_name) / 1024 / 1024  # MB
 
-        with open(file_name, 'rb') as video_file:
-            await query.message.reply_document(chat_id=chat_id, document=video_file, caption="✅ دانلود کامل شد!")
+        if file_size < 1990:
+            await query.message.reply_text("📤 در حال ارسال ویدیو...")
+            with open(file_name, 'rb') as video_file:
+                await query.message.reply_document(chat_id=chat_id, document=video_file, caption="✅ دانلود کامل شد!")
+        else:
+            await query.message.reply_text("🛜 حجم فایل زیاده، در حال آپلود به GoFile.io...")
+            upload_url = "https://api.gofile.io/uploadFile"
+            with open(file_name, 'rb') as f:
+                response = requests.post(upload_url, files={"file": f})
+                res_json = response.json()
+
+            if res_json["status"] == "ok":
+                file_link = res_json["data"]["downloadPage"]
+                await query.message.reply_text(f"✅ آپلود کامل شد. لینک دانلود:\n{file_link}")
+            else:
+                await query.message.reply_text("❌ خطا در آپلود فایل بزرگ.")
 
         os.remove(file_name)
 
@@ -111,4 +129,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
