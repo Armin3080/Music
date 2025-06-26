@@ -1,0 +1,48 @@
+body {
+    font-family: 'Orbitron', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #121212;
+    color: #00ffaa;
+}
+
+.container {
+    display: flex;
+    height: 100vh;
+}
+
+.left-side, .right-side {
+    flex: 1;
+    padding: 20px;
+}
+
+.video-container {
+    border: 2px solid #00ffaa;
+    height: 80%;
+    margin-bottom: 20px;
+}
+
+.video-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.controls {
+    display: flex;
+    gap: 10px;
+}
+
+button {
+    background: #00ffaa;
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-family: 'Orbitron';
+}
+
+#status-box {
+    border: 1px solid #00ffaa;
+    padding: 15px;
+    margin-top: 20px;
+}
