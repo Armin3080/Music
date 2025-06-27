@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Random Video Chat</title>
+    <link rel="stylesheet" href="static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Random Video Chat</h1>
+            <p>Connect with people from around the world instantly</p>
+        </header>
+
+        <main>
+            <div class="video-container">
+                <div class="video-box">
+                    <video id="localVideo" autoplay muted></video>
+                    <div class="video-label">You</div>
+                </div>
+                <div class="video-box">
+                    <video id="remoteVideo" autoplay></video>
+                    <div class="video-label">Stranger</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button id="startButton" class="btn primary">
+                    <span class="icon">🔍</span> Find Stranger
+                </button>
+                <button id="stopButton" class="btn danger" disabled>
+                    <span class="icon">✋</span> Stop Chat
+                </button>
+                <button id="micButton" class="btn secondary">
+                    <span class="icon">🎤</span> Mic On
+                </button>
+                <button id="camButton" class="btn secondary">
+                    <span class="icon">📷</span> Cam On
+                </button>
+            </div>
+
+            <div class="status" id="status">
+                Ready to connect...
+            </div>
+        </main>
+
+        <footer>
+            <p>Random Video Chat &copy; 2023 | Privacy Policy | Terms of Service</p>
+        </footer>
+    </div>
+
+    <script>
+        // DOM Elements
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const micButton = document.getElementById('micButton');
+        const camButton = document.getElementById('camButton');
+        const statusDiv = document.getElementById('status');
+
+        // WebRTC variables
+        let localStream;
+        let peerConnection;
+        let socket;
+        let currentRoom = null;
+        let micEnabled = true;
+        let camEnabled = true;
+
+        // Initialize
+        async function init() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
+                localVideo.srcObject = localStream;
+                statusDiv.textContent = "Connected to your device";
+                
+                // Connect to signaling server
+                socket = new WebSocket(`ws://${window.location.hostname}:8080/ws`);
+                
+                socket.onopen = () => {
+                    statusDiv.textContent = "Connected to server. Click 'Find Stranger' to start!";
+                };
+                
+                socket.onmessage = handleMessage;
+                socket.onclose = () => {
+                    statusDiv.textContent = "Disconnected from server. Refresh to reconnect.";
+                };
+                
+            } catch (err) {
+                console.error("Error accessing media devices:", err);
+                statusDiv.textContent = "Error accessing camera/microphone. Please check permissions.";
+            }
+        }
+
+        // Handle WebSocket messages
+        function handleMessage(event) {
+            const message = JSON.parse(event.data);
+            
+            if (message.type === 'offer') {
+                handleOffer(message);
+            } else if (message.type === 'answer') {
+                handleAnswer(message);
+            } else if (message.type === 'candidate') {
+                handleCandidate(message);
+            } else if (message.type === 'room_created') {
+                currentRoom = message.room;
+                statusDiv.textContent = `Waiting for stranger to join room ${currentRoom}...`;
+            } else if (message.type === 'room_joined') {
+                currentRoom = message.room;
+                statusDiv.textContent = `Joined room ${currentRoom}. Starting call...`;
+                createPeerConnection(true);
+            } else if (message.type === 'room_full') {
+                statusDiv.textContent = "Room is full. Try again.";
+                resetConnection();
+            } else if (message.type === 'user_disconnected') {
+                statusDiv.textContent = "Stranger disconnected. Click 'Find Stranger' to connect again.";
+                resetConnection();
+            }
+        }
+
+        // Create RTCPeerConnection
+        function createPeerConnection(isInitiator) {
+            const configuration = {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            };
+            
+            peerConnection = new RTCPeerConnection(configuration);
+            
+            // Add local stream to connection
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+            
+            // Handle remote stream
+            peerConnection.ontrack = event => {
+                remoteVideo.srcObject = event.streams[0];
+                statusDiv.textContent = `Connected to stranger in room ${currentRoom}!`;
+                stopButton.disabled = false;
+            };
+            
+            // Handle ICE candidates
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    socket.send(JSON.stringify({
+                        type: 'candidate',
+                        candidate: event.candidate,
+                        room: currentRoom
+                    }));
+                }
+            };
+            
+            // Handle connection state changes
+            peerConnection.onconnectionstatechange = () => {
+                if (peerConnection.connectionState === 'disconnected' || 
+                    peerConnection.connectionState === 'failed') {
+                    statusDiv.textContent = "Connection lost. Click 'Find Stranger' to reconnect.";
+                    resetConnection();
+                }
+            };
+            
+            // Create offer if initiator
+            if (isInitiator) {
+                peerConnection.createOffer()
+                    .then(offer => peerConnection.setLocalDescription(offer))
+                    .then(() => {
+                        socket.send(JSON.stringify({
+                            type: 'offer',
+                            offer: peerConnection.localDescription,
+                            room: currentRoom
+                        }));
+                    })
+                    .catch(handleError);
+            }
+        }
+
+        // Handle incoming offer
+        function handleOffer(message) {
+            createPeerConnection(false);
+            peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer))
+                .then(() => peerConnection.createAnswer())
+                .then(answer => peerConnection.setLocalDescription(answer))
+                .then(() => {
+                    socket.send(JSON.stringify({
+                        type: 'answer',
+                        answer: peerConnection.localDescription,
+                        room: currentRoom
+                    }));
+                })
+                .catch(handleError);
+        }
+
+        // Handle incoming answer
+        function handleAnswer(message) {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer))
+                .catch(handleError);
+        }
+
+        // Handle incoming ICE candidate
+        function handleCandidate(message) {
+            peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate))
+                .catch(handleError);
+        }
+
+        // Error handling
+        function handleError(error) {
+            console.error("Error:", error);
+            statusDiv.textContent = "Error occurred. Try again.";
+            resetConnection();
+        }
+
+        // Reset connection
+        function resetConnection() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            remoteVideo.srcObject = null;
+            currentRoom = null;
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        }
+
+        // Event listeners
+        startButton.addEventListener('click', () => {
+            startButton.disabled = true;
+            statusDiv.textContent = "Finding a stranger...";
+            socket.send(JSON.stringify({ type: 'create_or_join' }));
+        });
+
+        stopButton.addEventListener('click', () => {
+            socket.send(JSON.stringify({
+                type: 'leave',
+                room: currentRoom
+            }));
+            resetConnection();
+            statusDiv.textContent = "Call ended. Click 'Find Stranger' to connect again.";
+        });
+
+        micButton.addEventListener('click', () => {
+            micEnabled = !micEnabled;
+            localStream.getAudioTracks().forEach(track => {
+                track.enabled = micEnabled;
+            });
+            micButton.innerHTML = micEnabled ? 
+                '<span class="icon">🎤</span> Mic On' : 
+                '<span class="icon">🔇</span> Mic Off';
+        });
+
+        camButton.addEventListener('click', () => {
+            camEnabled = !camEnabled;
+            localStream.getVideoTracks().forEach(track => {
+                track.enabled = camEnabled;
+            });
+            camButton.innerHTML = camEnabled ? 
+                '<span class="icon">📷</span> Cam On' : 
+                '<span class="icon">🚫</span> Cam Off';
+        });
+
+        // Initialize the app
+        init();
+    </script>
+</body>
+</html>
